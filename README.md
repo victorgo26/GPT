@@ -4,20 +4,28 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- Configurações
 local FOV_RADIUS = 100
 local AIMBOT_MAX_DIST = 1000
 local espAtivado = true
 local aimbotAtivado = true
 local mirando = false
 
-local corDentroVisao = Color3.fromRGB(255, 255, 0) -- Amarelo
-local corForaVisao = Color3.fromRGB(255, 0, 0)     -- Vermelho
+local corDentroVisao = Color3.fromRGB(255, 255, 0)
+local corForaVisao = Color3.fromRGB(255, 0, 0)
 local corFOV = Color3.fromRGB(0, 255, 255)
 
-local caixasPorJogador = {}
+local partesParaMostrar = {
+	"Head",
+	"Torso", "UpperTorso", "LowerTorso",
+	"LeftArm", "LeftUpperArm", "LeftLowerArm",
+	"RightArm", "RightUpperArm", "RightLowerArm",
+	"LeftLeg", "LeftUpperLeg", "LeftLowerLeg",
+	"RightLeg", "RightUpperLeg", "RightLowerLeg"
+}
 
--- Círculo de FOV
+local desenhosPorJogador = {}
+
+-- FOV circle
 local fovCircle = Drawing.new("Circle")
 fovCircle.Radius = FOV_RADIUS
 fovCircle.Thickness = 1
@@ -26,7 +34,7 @@ fovCircle.Transparency = 1
 fovCircle.Color = corFOV
 fovCircle.Visible = true
 
--- GUI simples com Drawing
+-- GUI texto
 local statusText = Drawing.new("Text")
 statusText.Size = 18
 statusText.Color = Color3.fromRGB(255, 255, 255)
@@ -35,41 +43,47 @@ statusText.Text = "ESP: ON | Aimbot: ON"
 statusText.Outline = true
 statusText.Visible = true
 
--- Criar caixa
-local function criarCaixa(player)
-	if player == LocalPlayer then return end
-	if caixasPorJogador[player] then return end
-
-	local box = Drawing.new("Square")
-	box.Thickness = 2
-	box.Filled = false
-	box.Visible = false
-	caixasPorJogador[player] = box
-end
-
--- Remover caixa
-local function removerCaixa(player)
-	if caixasPorJogador[player] then
-		caixasPorJogador[player]:Remove()
-		caixasPorJogador[player] = nil
-	end
-end
-
--- Jogadores existentes
-for _, player in ipairs(Players:GetPlayers()) do
-	criarCaixa(player)
-end
-
-Players.PlayerAdded:Connect(criarCaixa)
-Players.PlayerRemoving:Connect(removerCaixa)
-
--- Inimigo? (verifica Team)
+-- Verifica se é inimigo
 local function ehInimigo(player)
 	if not player.Team or not LocalPlayer.Team then return true end
 	return player.Team ~= LocalPlayer.Team
 end
 
--- Alvo mais próximo dentro do FOV
+-- Cria desenhos por parte
+local function criarDesenhos(player)
+	if player == LocalPlayer then return end
+	if desenhosPorJogador[player] then return end
+
+	local lista = {}
+	for _, nomeParte in ipairs(partesParaMostrar) do
+		local box = Drawing.new("Square")
+		box.Thickness = 1.5
+		box.Filled = false
+		box.Visible = false
+		table.insert(lista, {nome = nomeParte, desenho = box})
+	end
+	desenhosPorJogador[player] = lista
+end
+
+-- Remove desenhos
+local function removerDesenhos(player)
+	if desenhosPorJogador[player] then
+		for _, parteInfo in ipairs(desenhosPorJogador[player]) do
+			parteInfo.desenho:Remove()
+		end
+		desenhosPorJogador[player] = nil
+	end
+end
+
+-- Jogadores existentes
+for _, player in ipairs(Players:GetPlayers()) do
+	criarDesenhos(player)
+end
+
+Players.PlayerAdded:Connect(criarDesenhos)
+Players.PlayerRemoving:Connect(removerDesenhos)
+
+-- Alvo mais próximo
 local function getAlvoMaisProximo()
 	local menorDist = math.huge
 	local alvo = nil
@@ -94,7 +108,7 @@ local function getAlvoMaisProximo()
 	return alvo
 end
 
--- Input do usuário
+-- Input
 UserInputService.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		mirando = true
@@ -111,10 +125,9 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- Loop principal
+-- Loop
 RunService.RenderStepped:Connect(function()
-	local centro = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-	fovCircle.Position = centro
+	fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
 
 	-- Aimbot
 	if mirando and aimbotAtivado then
@@ -125,36 +138,46 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
-	-- ESP
-	for player, box in pairs(caixasPorJogador) do
+	-- ESP por partes
+	for player, partes in pairs(desenhosPorJogador) do
 		local char = player.Character
-		if not char or not char:FindFirstChild("HumanoidRootPart") or not ehInimigo(player) then
-			box.Visible = false
+		if not (char and char:FindFirstChild("HumanoidRootPart") and ehInimigo(player)) then
+			for _, p in ipairs(partes) do p.desenho.Visible = false end
 			continue
 		end
 
 		local hrp = char.HumanoidRootPart
-		local min = hrp.Position - Vector3.new(2, 3, 0)
-		local max = hrp.Position + Vector3.new(2, 3, 0)
+		local direcao = (hrp.Position - Camera.CFrame.Position).Unit
+		local alinhado = direcao:Dot(Camera.CFrame.LookVector)
+		local corAtual = alinhado > 0.5 and corDentroVisao or corForaVisao
 
-		local p1, v1 = Camera:WorldToViewportPoint(min)
-		local p2, v2 = Camera:WorldToViewportPoint(max)
+		for _, parteInfo in ipairs(partes) do
+			local parte = char:FindFirstChild(parteInfo.nome)
+			local desenho = parteInfo.desenho
 
-		if (v1 and v2) and espAtivado then
-			local topLeft = Vector2.new(math.min(p1.X, p2.X), math.min(p1.Y, p2.Y))
-			local width = math.abs(p2.X - p1.X)
-			local height = math.abs(p2.Y - p1.Y)
+			if parte and espAtivado then
+				local tamanho = parte.Size or Vector3.new(1,1,1)
+				local corner1 = parte.Position - (tamanho / 2)
+				local corner2 = parte.Position + (tamanho / 2)
 
-			box.Position = topLeft
-			box.Size = Vector2.new(width, height)
+				local p1, v1 = Camera:WorldToViewportPoint(corner1)
+				local p2, v2 = Camera:WorldToViewportPoint(corner2)
 
-			local direcao = (hrp.Position - Camera.CFrame.Position).Unit
-			local alinhamento = direcao:Dot(Camera.CFrame.LookVector)
-			box.Color = alinhamento > 0.5 and corDentroVisao or corForaVisao
+				if v1 and v2 then
+					local topLeft = Vector2.new(math.min(p1.X, p2.X), math.min(p1.Y, p2.Y))
+					local width = math.abs(p2.X - p1.X)
+					local height = math.abs(p2.Y - p1.Y)
 
-			box.Visible = true
-		else
-			box.Visible = false
+					desenho.Position = topLeft
+					desenho.Size = Vector2.new(width, height)
+					desenho.Color = corAtual
+					desenho.Visible = true
+				else
+					desenho.Visible = false
+				end
+			else
+				desenho.Visible = false
+			end
 		end
 	end
 end)
