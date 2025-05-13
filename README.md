@@ -7,35 +7,43 @@ local corDentroVisao = Color3.fromRGB(255, 255, 0) -- Amarelo
 local corForaVisao = Color3.fromRGB(255, 0, 0)     -- Vermelho
 local espAtivado = true
 
--- Lista de partes que vamos mostrar
-local partesParaMostrar = {
-	"Head",
-	"Torso", "UpperTorso", "LowerTorso",
-	"LeftArm", "LeftUpperArm", "LeftLowerArm",
-	"RightArm", "RightUpperArm", "RightLowerArm",
-	"LeftLeg", "LeftUpperLeg", "LeftLowerLeg",
-	"RightLeg", "RightUpperLeg", "RightLowerLeg"
+-- Ligações entre partes do corpo (para formar o esqueleto)
+local ligacoes = {
+	{"Head", "UpperTorso"},
+	{"UpperTorso", "LowerTorso"},
+	{"UpperTorso", "LeftUpperArm"},
+	{"LeftUpperArm", "LeftLowerArm"},
+	{"LeftLowerArm", "LeftHand"},
+	{"UpperTorso", "RightUpperArm"},
+	{"RightUpperArm", "RightLowerArm"},
+	{"RightLowerArm", "RightHand"},
+	{"LowerTorso", "LeftUpperLeg"},
+	{"LeftUpperLeg", "LeftLowerLeg"},
+	{"LeftLowerLeg", "LeftFoot"},
+	{"LowerTorso", "RightUpperLeg"},
+	{"RightUpperLeg", "RightLowerLeg"},
+	{"RightLowerLeg", "RightFoot"},
 }
 
--- Criar desenhos para cada parte
+-- Guardar desenhos por jogador
 local desenhosPorJogador = {}
 
+-- Criar linhas para o jogador
 local function criarDesenhos(player)
 	if player == LocalPlayer then return end
 	if desenhosPorJogador[player] then return end
 
-	local desenhos = {}
-	for _, parte in ipairs(partesParaMostrar) do
-		local dot = Drawing.new("Circle")
-		dot.Radius = 4
-		dot.Thickness = 2
-		dot.Visible = false
-		dot.Filled = true
-		table.insert(desenhos, {nome = parte, desenho = dot})
+	local linhas = {}
+	for _, par in ipairs(ligacoes) do
+		local linha = Drawing.new("Line")
+		linha.Thickness = 2
+		linha.Visible = false
+		table.insert(linhas, {de = par[1], para = par[2], desenho = linha})
 	end
-	desenhosPorJogador[player] = desenhos
+	desenhosPorJogador[player] = linhas
 end
 
+-- Remover os desenhos
 local function removerDesenhos(player)
 	if desenhosPorJogador[player] then
 		for _, info in ipairs(desenhosPorJogador[player]) do
@@ -45,41 +53,43 @@ local function removerDesenhos(player)
 	end
 end
 
--- Iniciar para os jogadores existentes
-for _, player in pairs(Players:GetPlayers()) do
+-- Inicializar para jogadores existentes
+for _, player in ipairs(Players:GetPlayers()) do
 	criarDesenhos(player)
 end
 
--- Conectar jogadores entrando e saindo
+-- Conectar eventos
 Players.PlayerAdded:Connect(criarDesenhos)
 Players.PlayerRemoving:Connect(removerDesenhos)
 
--- Atualizar posição a cada frame
+-- Atualização a cada frame
 RunService.RenderStepped:Connect(function()
-	for player, partes in pairs(desenhosPorJogador) do
+	for player, linhas in pairs(desenhosPorJogador) do
 		local char = player.Character
-		if not (char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart")) then
-			for _, parteInfo in ipairs(partes) do
-				parteInfo.desenho.Visible = false
+		if not (char and char:FindFirstChild("HumanoidRootPart")) then
+			for _, info in ipairs(linhas) do
+				info.desenho.Visible = false
 			end
 			continue
 		end
 
-		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local hrp = char.HumanoidRootPart
 		local direcao = (hrp.Position - Camera.CFrame.Position).Unit
 		local alinhamento = direcao:Dot(Camera.CFrame.LookVector)
 		local estaNoCampo = alinhamento > 0.5
-
 		local corAtual = estaNoCampo and corDentroVisao or corForaVisao
 
-		for _, parteInfo in ipairs(partes) do
-			local parte = char:FindFirstChild(parteInfo.nome)
-			local desenho = parteInfo.desenho
+		for _, info in ipairs(linhas) do
+			local parte1 = char:FindFirstChild(info.de)
+			local parte2 = char:FindFirstChild(info.para)
+			local desenho = info.desenho
 
-			if parte then
-				local screenPos, visivel = Camera:WorldToViewportPoint(parte.Position)
-				if visivel and espAtivado then
-					desenho.Position = Vector2.new(screenPos.X, screenPos.Y)
+			if parte1 and parte2 then
+				local p1, v1 = Camera:WorldToViewportPoint(parte1.Position)
+				local p2, v2 = Camera:WorldToViewportPoint(parte2.Position)
+				if v1 and v2 and espAtivado then
+					desenho.From = Vector2.new(p1.X, p1.Y)
+					desenho.To = Vector2.new(p2.X, p2.Y)
 					desenho.Color = corAtual
 					desenho.Visible = true
 				else
