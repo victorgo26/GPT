@@ -6,63 +6,42 @@ local LocalPlayer = Players.LocalPlayer
 
 local espAtivado = true
 local aimbotAtivado = true
+local mirando = false
 
 local corDentroVisao = Color3.fromRGB(255, 255, 0) -- Amarelo
 local corForaVisao = Color3.fromRGB(255, 0, 0)     -- Vermelho
 
-local ligacoes = {
-	{"Head", "UpperTorso"},
-	{"UpperTorso", "LowerTorso"},
-	{"UpperTorso", "LeftUpperArm"},
-	{"LeftUpperArm", "LeftLowerArm"},
-	{"LeftLowerArm", "LeftHand"},
-	{"UpperTorso", "RightUpperArm"},
-	{"RightUpperArm", "RightLowerArm"},
-	{"RightLowerArm", "RightHand"},
-	{"LowerTorso", "LeftUpperLeg"},
-	{"LeftUpperLeg", "LeftLowerLeg"},
-	{"LeftLowerLeg", "LeftFoot"},
-	{"LowerTorso", "RightUpperLeg"},
-	{"RightUpperLeg", "RightLowerLeg"},
-	{"RightLowerLeg", "RightFoot"},
-}
+local caixasPorJogador = {}
 
-local desenhosPorJogador = {}
-
--- Criar linhas do esqueleto
-local function criarDesenhos(player)
+-- Criar caixa para um jogador
+local function criarCaixa(player)
 	if player == LocalPlayer then return end
-	if desenhosPorJogador[player] then return end
+	if caixasPorJogador[player] then return end
 
-	local linhas = {}
-	for _, par in ipairs(ligacoes) do
-		local linha = Drawing.new("Line")
-		linha.Thickness = 2
-		linha.Visible = false
-		table.insert(linhas, {De = par[1], Para = par[2], Linha = linha})
-	end
-	desenhosPorJogador[player] = linhas
+	local box = Drawing.new("Square")
+	box.Thickness = 2
+	box.Visible = false
+	box.Filled = false
+	caixasPorJogador[player] = box
 end
 
--- Remover linhas
-local function removerDesenhos(player)
-	if desenhosPorJogador[player] then
-		for _, info in ipairs(desenhosPorJogador[player]) do
-			info.Linha:Remove()
-		end
-		desenhosPorJogador[player] = nil
+-- Remover caixa de jogador
+local function removerCaixa(player)
+	if caixasPorJogador[player] then
+		caixasPorJogador[player]:Remove()
+		caixasPorJogador[player] = nil
 	end
 end
 
--- Inicial
+-- Aplicar a todos os jogadores existentes
 for _, player in ipairs(Players:GetPlayers()) do
-	criarDesenhos(player)
+	criarCaixa(player)
 end
 
-Players.PlayerAdded:Connect(criarDesenhos)
-Players.PlayerRemoving:Connect(removerDesenhos)
+Players.PlayerAdded:Connect(criarCaixa)
+Players.PlayerRemoving:Connect(removerCaixa)
 
--- Função para encontrar o inimigo mais próximo
+-- Encontrar o inimigo mais próximo da mira
 local function getAlvoMaisProximo()
 	local menorDist = math.huge
 	local alvo = nil
@@ -71,10 +50,10 @@ local function getAlvoMaisProximo()
 		if player == LocalPlayer then continue end
 		local char = player.Character
 		if char and char:FindFirstChild("Head") then
-			local head = char:FindFirstChild("Head")
-			local screenPos, visivel = Camera:WorldToViewportPoint(head.Position)
+			local head = char.Head
+			local pos, visivel = Camera:WorldToViewportPoint(head.Position)
 			if visivel then
-				local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+				local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)).Magnitude
 				if dist < menorDist then
 					menorDist = dist
 					alvo = head
@@ -86,18 +65,14 @@ local function getAlvoMaisProximo()
 	return alvo
 end
 
--- Variável para saber se o botão do mouse está pressionado
-local mirando = false
-
--- Detecção de pressionamento de tecla
-UserInputService.InputBegan:Connect(function(input, gp)
+-- Input do usuário
+UserInputService.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		mirando = true
 	elseif input.KeyCode == Enum.KeyCode.F4 then
-		-- Alternar ativação/desativação do ESP e Aimbot
 		espAtivado = not espAtivado
 		aimbotAtivado = not aimbotAtivado
-		print("ESP Ativado:", espAtivado, " | Aimbot Ativado:", aimbotAtivado)
+		print("ESP:", espAtivado, " | Aimbot:", aimbotAtivado)
 	end
 end)
 
@@ -107,9 +82,9 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- Atualização a cada frame
+-- Loop de atualização
 RunService.RenderStepped:Connect(function()
-	-- Aimbot: Ajusta a câmera para mirar no inimigo mais próximo
+	-- Aimbot
 	if mirando and aimbotAtivado then
 		local alvo = getAlvoMaisProximo()
 		if alvo then
@@ -118,42 +93,36 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
-	-- ESP: Exibir linhas de esqueleto
-	for player, linhas in pairs(desenhosPorJogador) do
+	-- ESP com caixas
+	for player, box in pairs(caixasPorJogador) do
 		local char = player.Character
 		if not (char and char:FindFirstChild("HumanoidRootPart")) then
-			for _, info in ipairs(linhas) do
-				info.Linha.Visible = false
-			end
+			box.Visible = false
 			continue
 		end
 
-		local hrp = char:FindFirstChild("HumanoidRootPart")
-		local direcao = (hrp.Position - Camera.CFrame.Position).Unit
-		local alinhamento = direcao:Dot(Camera.CFrame.LookVector)
-		local estaNoCampo = alinhamento > 0.5
-		local corAtual = estaNoCampo and corDentroVisao or corForaVisao
+		local hrp = char.HumanoidRootPart
+		local min = (hrp.Position - Vector3.new(2, 3, 0))
+		local max = (hrp.Position + Vector3.new(2, 3, 0))
 
-		for _, info in ipairs(linhas) do
-			local parte1 = char:FindFirstChild(info.De)
-			local parte2 = char:FindFirstChild(info.Para)
-			local linha = info.Linha
+		local p1, v1 = Camera:WorldToViewportPoint(Vector3.new(min.X, min.Y, min.Z))
+		local p2, v2 = Camera:WorldToViewportPoint(Vector3.new(max.X, max.Y, max.Z))
 
-			if parte1 and parte2 and espAtivado then
-				local pos1, vis1 = Camera:WorldToViewportPoint(parte1.Position)
-				local pos2, vis2 = Camera:WorldToViewportPoint(parte2.Position)
+		if (v1 and v2) and espAtivado then
+			local topLeft = Vector2.new(math.min(p1.X, p2.X), math.min(p1.Y, p2.Y))
+			local width = math.abs(p2.X - p1.X)
+			local height = math.abs(p2.Y - p1.Y)
 
-				if vis1 and vis2 then
-					linha.From = Vector2.new(pos1.X, pos1.Y)
-					linha.To = Vector2.new(pos2.X, pos2.Y)
-					linha.Color = corAtual
-					linha.Visible = true
-				else
-					linha.Visible = false
-				end
-			else
-				linha.Visible = false
-			end
+			box.Position = topLeft
+			box.Size = Vector2.new(width, height)
+
+			local direcao = (hrp.Position - Camera.CFrame.Position).Unit
+			local alinhamento = direcao:Dot(Camera.CFrame.LookVector)
+			box.Color = alinhamento > 0.5 and corDentroVisao or corForaVisao
+
+			box.Visible = true
+		else
+			box.Visible = false
 		end
 	end
 end)
