@@ -1,127 +1,93 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
 
--- CONFIGURAÇÕES
+local corDentroVisao = Color3.fromRGB(255, 255, 0) -- Amarelo
+local corForaVisao = Color3.fromRGB(255, 0, 0)     -- Vermelho
 local espAtivado = true
-local corForaVisao = Color3.fromRGB(255, 255, 255)
-local corDentroVisao = Color3.fromRGB(255, 0, 0)
 
--- GUI PANEL
-local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
-ScreenGui.Name = "ESPGUI"
-ScreenGui.ResetOnSpawn = false
+-- Lista de partes que vamos mostrar
+local partesParaMostrar = {
+	"Head",
+	"Torso", "UpperTorso", "LowerTorso",
+	"LeftArm", "LeftUpperArm", "LeftLowerArm",
+	"RightArm", "RightUpperArm", "RightLowerArm",
+	"LeftLeg", "LeftUpperLeg", "LeftLowerLeg",
+	"RightLeg", "RightUpperLeg", "RightLowerLeg"
+}
 
-local Frame = Instance.new("Frame", ScreenGui)
-Frame.Position = UDim2.new(0.7, 0, 0.3, 0)
-Frame.Size = UDim2.new(0, 250, 0, 200)
-Frame.Visible = false
-Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+-- Criar desenhos para cada parte
+local desenhosPorJogador = {}
 
-local ToggleButton = Instance.new("TextButton", Frame)
-ToggleButton.Size = UDim2.new(1, -20, 0, 40)
-ToggleButton.Position = UDim2.new(0, 10, 0, 10)
-ToggleButton.Text = "Ativar/Desativar ESP"
-ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-
-local DentroColor = Instance.new("TextBox", Frame)
-DentroColor.PlaceholderText = "Cor visão (RGB: 255,0,0)"
-DentroColor.Size = UDim2.new(1, -20, 0, 30)
-DentroColor.Position = UDim2.new(0, 10, 0, 60)
-
-local ForaColor = Instance.new("TextBox", Frame)
-ForaColor.PlaceholderText = "Cor fora visão (RGB: 255,255,255)"
-ForaColor.Size = UDim2.new(1, -20, 0, 30)
-ForaColor.Position = UDim2.new(0, 10, 0, 100)
-
-ToggleButton.MouseButton1Click:Connect(function()
-	espAtivado = not espAtivado
-end)
-
-DentroColor.FocusLost:Connect(function()
-	local r,g,b = DentroColor.Text:match("(%d+),%s*(%d+),%s*(%d+)")
-	if r and g and b then
-		corDentroVisao = Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b))
-	end
-end)
-
-ForaColor.FocusLost:Connect(function()
-	local r,g,b = ForaColor.Text:match("(%d+),%s*(%d+),%s*(%d+)")
-	if r and g and b then
-		corForaVisao = Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b))
-	end
-end)
-
--- Mostrar/ocultar painel com F4
-local UserInputService = game:GetService("UserInputService")
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if input.KeyCode == Enum.KeyCode.F4 and not gameProcessed then
-		Frame.Visible = not Frame.Visible
-	end
-end)
-
--- ESP Drawing
-local espBoxes = {}
-
-local function createESP(player)
+local function criarDesenhos(player)
 	if player == LocalPlayer then return end
-	local box = Drawing.new("Square")
-	box.Thickness = 2
-	box.Transparency = 1
-	box.Filled = false
-	box.Visible = false
-	espBoxes[player] = box
-end
+	if desenhosPorJogador[player] then return end
 
-local function removeESP(player)
-	if espBoxes[player] then
-		espBoxes[player]:Remove()
-		espBoxes[player] = nil
+	local desenhos = {}
+	for _, parte in ipairs(partesParaMostrar) do
+		local dot = Drawing.new("Circle")
+		dot.Radius = 4
+		dot.Thickness = 2
+		dot.Visible = false
+		dot.Filled = true
+		table.insert(desenhos, {nome = parte, desenho = dot})
 	end
+	desenhosPorJogador[player] = desenhos
 end
 
-Players.PlayerAdded:Connect(createESP)
-Players.PlayerRemoving:Connect(removeESP)
-
-for _, player in pairs(Players:GetPlayers()) do
-	createESP(player)
-end
-
-RunService.RenderStepped:Connect(function()
-	if not espAtivado then
-		for _, box in pairs(espBoxes) do
-			box.Visible = false
+local function removerDesenhos(player)
+	if desenhosPorJogador[player] then
+		for _, info in ipairs(desenhosPorJogador[player]) do
+			info.desenho:Remove()
 		end
-		return
+		desenhosPorJogador[player] = nil
 	end
+end
 
-	for player, box in pairs(espBoxes) do
+-- Iniciar para os jogadores existentes
+for _, player in pairs(Players:GetPlayers()) do
+	criarDesenhos(player)
+end
+
+-- Conectar jogadores entrando e saindo
+Players.PlayerAdded:Connect(criarDesenhos)
+Players.PlayerRemoving:Connect(removerDesenhos)
+
+-- Atualizar posição a cada frame
+RunService.RenderStepped:Connect(function()
+	for player, partes in pairs(desenhosPorJogador) do
 		local char = player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if not (char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart")) then
+			for _, parteInfo in ipairs(partes) do
+				parteInfo.desenho.Visible = false
+			end
+			continue
+		end
 
-		if hrp and hum and hum.Health > 0 then
-			local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-			if onScreen then
-				local size = Vector2.new(60, 100) -- Tamanho da caixa
-				box.Position = Vector2.new(pos.X - size.X/2, pos.Y - size.Y/2)
-				box.Size = size
-				box.Visible = true
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local direcao = (hrp.Position - Camera.CFrame.Position).Unit
+		local alinhamento = direcao:Dot(Camera.CFrame.LookVector)
+		local estaNoCampo = alinhamento > 0.5
 
-				-- Verifica se está no campo de visão
-				local dir = (hrp.Position - Camera.CFrame.Position).Unit
-				local dot = dir:Dot(Camera.CFrame.LookVector)
-				if dot > 0.5 then
-					box.Color = corDentroVisao
+		local corAtual = estaNoCampo and corDentroVisao or corForaVisao
+
+		for _, parteInfo in ipairs(partes) do
+			local parte = char:FindFirstChild(parteInfo.nome)
+			local desenho = parteInfo.desenho
+
+			if parte then
+				local screenPos, visivel = Camera:WorldToViewportPoint(parte.Position)
+				if visivel and espAtivado then
+					desenho.Position = Vector2.new(screenPos.X, screenPos.Y)
+					desenho.Color = corAtual
+					desenho.Visible = true
 				else
-					box.Color = corForaVisao
+					desenho.Visible = false
 				end
 			else
-				box.Visible = false
+				desenho.Visible = false
 			end
-		else
-			box.Visible = false
 		end
 	end
 end)
