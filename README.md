@@ -1,13 +1,15 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
+local espAtivado = true
+local aimbotAtivado = true
+
 local corDentroVisao = Color3.fromRGB(255, 255, 0) -- Amarelo
 local corForaVisao = Color3.fromRGB(255, 0, 0)     -- Vermelho
-local espAtivado = true
 
--- Ligações entre partes do corpo para formar o esqueleto
 local ligacoes = {
 	{"Head", "UpperTorso"},
 	{"UpperTorso", "LowerTorso"},
@@ -25,10 +27,9 @@ local ligacoes = {
 	{"RightLowerLeg", "RightFoot"},
 }
 
--- Tabela para armazenar os desenhos por jogador
 local desenhosPorJogador = {}
 
--- Cria as linhas para o jogador
+-- Criar linhas do esqueleto
 local function criarDesenhos(player)
 	if player == LocalPlayer then return end
 	if desenhosPorJogador[player] then return end
@@ -40,11 +41,10 @@ local function criarDesenhos(player)
 		linha.Visible = false
 		table.insert(linhas, {De = par[1], Para = par[2], Linha = linha})
 	end
-
 	desenhosPorJogador[player] = linhas
 end
 
--- Remove desenhos do jogador
+-- Remover linhas
 local function removerDesenhos(player)
 	if desenhosPorJogador[player] then
 		for _, info in ipairs(desenhosPorJogador[player]) do
@@ -54,17 +54,68 @@ local function removerDesenhos(player)
 	end
 end
 
--- Inicializar para jogadores existentes
+-- Inicial
 for _, player in ipairs(Players:GetPlayers()) do
 	criarDesenhos(player)
 end
 
--- Conectar eventos
 Players.PlayerAdded:Connect(criarDesenhos)
 Players.PlayerRemoving:Connect(removerDesenhos)
 
--- Atualização por frame
+-- Aimbot: retornar inimigo mais próximo da mira
+local function getAlvoMaisProximo()
+	local menorDist = math.huge
+	local alvo = nil
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player == LocalPlayer then continue end
+		local char = player.Character
+		if char and char:FindFirstChild("Head") then
+			local head = char:FindFirstChild("Head")
+			local screenPos, visivel = Camera:WorldToViewportPoint(head.Position)
+			if visivel then
+				local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+				if dist < menorDist then
+					menorDist = dist
+					alvo = head
+				end
+			end
+		end
+	end
+
+	return alvo
+end
+
+-- Mouse botão direito ativa aimbot
+local mirando = false
+UserInputService.InputBegan:Connect(function(input, gp)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		mirando = true
+	elseif input.KeyCode == Enum.KeyCode.F4 then
+		espAtivado = not espAtivado
+		aimbotAtivado = not aimbotAtivado
+		warn("ESP:", espAtivado, " | Aimbot:", aimbotAtivado)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gp)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		mirando = false
+	end
+end)
+
+-- Loop principal
 RunService.RenderStepped:Connect(function()
+	-- Aimbot
+	if mirando and aimbotAtivado then
+		local alvo = getAlvoMaisProximo()
+		if alvo then
+			local dir = (alvo.Position - Camera.CFrame.Position).Unit
+			Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + dir)
+		end
+	end
+
+	-- ESP
 	for player, linhas in pairs(desenhosPorJogador) do
 		local char = player.Character
 		if not (char and char:FindFirstChild("HumanoidRootPart")) then
@@ -74,7 +125,6 @@ RunService.RenderStepped:Connect(function()
 			continue
 		end
 
-		-- Verificar se o personagem está no campo de visão
 		local hrp = char:FindFirstChild("HumanoidRootPart")
 		local direcao = (hrp.Position - Camera.CFrame.Position).Unit
 		local alinhamento = direcao:Dot(Camera.CFrame.LookVector)
