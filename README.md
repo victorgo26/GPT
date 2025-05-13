@@ -1,76 +1,93 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local Camera = Workspace.CurrentCamera
+local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
-local ESPs = {} -- Armazena os Highlights
+local corDentroVisao = Color3.fromRGB(255, 255, 0) -- Amarelo
+local corForaVisao = Color3.fromRGB(255, 0, 0)     -- Vermelho
+local espAtivado = true
 
--- Cores
-local COR_VISIVEL = Color3.fromRGB(255, 255, 0) -- Amarelo
-local COR_OBSTRUÍDO = Color3.fromRGB(255, 0, 0) -- Vermelho
+-- Lista de partes que vamos mostrar
+local partesParaMostrar = {
+	"Head",
+	"Torso", "UpperTorso", "LowerTorso",
+	"LeftArm", "LeftUpperArm", "LeftLowerArm",
+	"RightArm", "RightUpperArm", "RightLowerArm",
+	"LeftLeg", "LeftUpperLeg", "LeftLowerLeg",
+	"RightLeg", "RightUpperLeg", "RightLowerLeg"
+}
 
--- Função para criar Highlight para um personagem
-local function criarESP(player)
+-- Criar desenhos para cada parte
+local desenhosPorJogador = {}
+
+local function criarDesenhos(player)
 	if player == LocalPlayer then return end
-	if ESPs[player] then return end
+	if desenhosPorJogador[player] then return end
 
-	local highlight = Instance.new("Highlight")
-	highlight.Adornee = nil
-	highlight.FillTransparency = 1 -- Sem preenchimento, só contorno
-	highlight.OutlineTransparency = 0
-	highlight.OutlineColor = COR_OBSTRUÍDO
-	highlight.Parent = game.CoreGui -- ou LocalPlayer.PlayerGui, se preferir
-
-	ESPs[player] = highlight
+	local desenhos = {}
+	for _, parte in ipairs(partesParaMostrar) do
+		local dot = Drawing.new("Circle")
+		dot.Radius = 4
+		dot.Thickness = 2
+		dot.Visible = false
+		dot.Filled = true
+		table.insert(desenhos, {nome = parte, desenho = dot})
+	end
+	desenhosPorJogador[player] = desenhos
 end
 
-local function removerESP(player)
-	if ESPs[player] then
-		ESPs[player]:Destroy()
-		ESPs[player] = nil
+local function removerDesenhos(player)
+	if desenhosPorJogador[player] then
+		for _, info in ipairs(desenhosPorJogador[player]) do
+			info.desenho:Remove()
+		end
+		desenhosPorJogador[player] = nil
 	end
 end
 
--- Inicializar para todos os jogadores
+-- Iniciar para os jogadores existentes
 for _, player in pairs(Players:GetPlayers()) do
-	criarESP(player)
+	criarDesenhos(player)
 end
 
-Players.PlayerAdded:Connect(criarESP)
-Players.PlayerRemoving:Connect(removerESP)
+-- Conectar jogadores entrando e saindo
+Players.PlayerAdded:Connect(criarDesenhos)
+Players.PlayerRemoving:Connect(removerDesenhos)
 
--- Atualizar ESP constantemente
+-- Atualizar posição a cada frame
 RunService.RenderStepped:Connect(function()
-	for player, highlight in pairs(ESPs) do
+	for player, partes in pairs(desenhosPorJogador) do
 		local char = player.Character
-		local root = char and char:FindFirstChild("HumanoidRootPart")
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-
-		if char and root and hum and hum.Health > 0 then
-			highlight.Adornee = char
-
-			-- Raycast da câmera até o HumanoidRootPart
-			local origem = Camera.CFrame.Position
-			local direcao = (root.Position - origem).Unit * 500
-
-			local params = RaycastParams.new()
-			params.FilterType = Enum.RaycastFilterType.Blacklist
-			params.FilterDescendantsInstances = {Camera, LocalPlayer.Character}
-
-			local resultado = Workspace:Raycast(origem, direcao, params)
-
-			if resultado and resultado.Instance:IsDescendantOf(char) then
-				-- Visível
-				highlight.OutlineColor = COR_VISIVEL
-			else
-				-- Obstruído
-				highlight.OutlineColor = COR_OBSTRUÍDO
+		if not (char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart")) then
+			for _, parteInfo in ipairs(partes) do
+				parteInfo.desenho.Visible = false
 			end
+			continue
+		end
 
-			highlight.Enabled = true
-		else
-			highlight.Enabled = false
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local direcao = (hrp.Position - Camera.CFrame.Position).Unit
+		local alinhamento = direcao:Dot(Camera.CFrame.LookVector)
+		local estaNoCampo = alinhamento > 0.5
+
+		local corAtual = estaNoCampo and corDentroVisao or corForaVisao
+
+		for _, parteInfo in ipairs(partes) do
+			local parte = char:FindFirstChild(parteInfo.nome)
+			local desenho = parteInfo.desenho
+
+			if parte then
+				local screenPos, visivel = Camera:WorldToViewportPoint(parte.Position)
+				if visivel and espAtivado then
+					desenho.Position = Vector2.new(screenPos.X, screenPos.Y)
+					desenho.Color = corAtual
+					desenho.Visible = true
+				else
+					desenho.Visible = false
+				end
+			else
+				desenho.Visible = false
+			end
 		end
 	end
 end)
