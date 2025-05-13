@@ -62,7 +62,7 @@ end
 Players.PlayerAdded:Connect(criarDesenhos)
 Players.PlayerRemoving:Connect(removerDesenhos)
 
--- Aimbot: retornar inimigo mais próximo da mira
+-- Função para encontrar o inimigo mais próximo
 local function getAlvoMaisProximo()
 	local menorDist = math.huge
 	local alvo = nil
@@ -86,27 +86,30 @@ local function getAlvoMaisProximo()
 	return alvo
 end
 
--- Mouse botão direito ativa aimbot
+-- Variável para saber se o botão do mouse está pressionado
 local mirando = false
+
+-- Detecção de pressionamento de tecla
 UserInputService.InputBegan:Connect(function(input, gp)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		mirando = true
 	elseif input.KeyCode == Enum.KeyCode.F4 then
+		-- Alternar ativação/desativação do ESP e Aimbot
 		espAtivado = not espAtivado
 		aimbotAtivado = not aimbotAtivado
-		warn("ESP:", espAtivado, " | Aimbot:", aimbotAtivado)
+		print("ESP Ativado:", espAtivado, " | Aimbot Ativado:", aimbotAtivado)
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input, gp)
+UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		mirando = false
 	end
 end)
 
--- Loop principal
+-- Atualização a cada frame
 RunService.RenderStepped:Connect(function()
-	-- Aimbot
+	-- Aimbot: Ajusta a câmera para mirar no inimigo mais próximo
 	if mirando and aimbotAtivado then
 		local alvo = getAlvoMaisProximo()
 		if alvo then
@@ -115,7 +118,7 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
-	-- ESP
+	-- ESP: Exibir linhas de esqueleto
 	for player, linhas in pairs(desenhosPorJogador) do
 		local char = player.Character
 		if not (char and char:FindFirstChild("HumanoidRootPart")) then
